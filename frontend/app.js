@@ -9,7 +9,7 @@ const priorityFilter = document.querySelector("#priority-filter");
 const taskList = document.querySelector("#task-list");
 const taskCount = document.querySelector("#task-count");
 const formMessage = document.querySelector("#form-message");
-const storageKey = "task-flow-v1";
+const apiBaseUrl = "/api";
 const taskStatuses = ["TODO", "DOING", "DONE"];
 const taskPriorities = ["HIGH", "NORMAL", "LOW"];
 
@@ -28,122 +28,64 @@ function isValidDate(value) {
   );
 }
 
-function persistTasks(tasksToSave) {
-  try {
-    localStorage.setItem(storageKey, JSON.stringify(tasksToSave));
-    return true;
-  } catch {
-    formMessage.textContent = "할 일을 저장하지 못했습니다. 저장 공간을 확인해 주세요.";
+function showMessage(message, isError = true) {
+  formMessage.textContent = message;
+  if (isError) {
     formMessage.dataset.error = "true";
-    return false;
+  } else {
+    delete formMessage.dataset.error;
   }
 }
 
-function loadTasks() {
-  let savedTasks;
-
+async function apiRequest(path, options = {}) {
+  let response;
   try {
-    const savedValue = localStorage.getItem(storageKey);
-    if (savedValue === null) {
-      return { tasks: [], error: null };
-    }
-    savedTasks = JSON.parse(savedValue);
+    response = await fetch(`${apiBaseUrl}${path}`, {
+      ...options,
+      headers: {
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...options.headers,
+      },
+    });
   } catch {
-    return {
-      tasks: [],
-      error: "저장된 데이터를 읽을 수 없습니다. 데이터 보호를 위해 등록을 중지했습니다.",
-    };
+    throw new Error("API 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해 주세요.");
   }
 
-  if (
-    !Array.isArray(savedTasks) ||
-    !savedTasks.every(
-      (task) =>
-        task !== null &&
-        typeof task === "object" &&
-        !Array.isArray(task) &&
-        typeof task.title === "string" &&
-        task.title === task.title.trim() &&
-        task.title.length >= 1 &&
-        task.title.length <= 100 &&
-        ((!Object.hasOwn(task, "id") &&
-          !Object.hasOwn(task, "status")) ||
-          (typeof task.id === "string" &&
-            task.id.length > 0 &&
-            taskStatuses.includes(task.status))) &&
-        (!Object.hasOwn(task, "description") ||
-          (typeof task.description === "string" &&
-            task.description.length <= 2000)) &&
-        (!Object.hasOwn(task, "priority") ||
-          taskPriorities.includes(task.priority)) &&
-        (!Object.hasOwn(task, "due_date") ||
-          task.due_date === null ||
-          isValidDate(task.due_date)) &&
-        (!Object.hasOwn(task, "created_at") ||
-          (typeof task.created_at === "string" &&
-            Number.isFinite(Date.parse(task.created_at)))),
-    )
-  ) {
-    return {
-      tasks: [],
-      error: "저장된 데이터 형식이 올바르지 않습니다. 데이터 보호를 위해 등록을 중지했습니다.",
-    };
-  }
-
-  const taskIds = savedTasks
-    .filter((task) => typeof task.id === "string")
-    .map((task) => task.id);
-  if (new Set(taskIds).size !== taskIds.length) {
-    return {
-      tasks: [],
-      error: "저장된 데이터 형식이 올바르지 않습니다. 데이터 보호를 위해 등록을 중지했습니다.",
-    };
-  }
-
-  const migratedTasks = savedTasks.map((task) => ({
-    id: task.id ?? crypto.randomUUID(),
-    title: task.title,
-    description: task.description ?? "",
-    status: task.status ?? "TODO",
-    priority: task.priority ?? "NORMAL",
-    due_date: task.due_date ?? null,
-    created_at: task.created_at ?? new Date().toISOString(),
-  }));
-
-  if (JSON.stringify(migratedTasks) !== JSON.stringify(savedTasks)) {
+  if (!response.ok) {
+    let detail = "";
     try {
-      localStorage.setItem(storageKey, JSON.stringify(migratedTasks));
+      const body = await response.json();
+      detail = typeof body.detail === "string" ? ` (${body.detail})` : "";
     } catch {
-      return {
-        tasks: migratedTasks,
-        error: "기존 할 일을 새 형식으로 저장하지 못했습니다. 데이터 보호를 위해 변경을 중지했습니다.",
-      };
+      detail = "";
     }
+    throw new Error(`요청에 실패했습니다. (${response.status})${detail}`);
   }
 
-  return { tasks: migratedTasks, error: null };
+  return response.status === 204 ? null : response.json();
 }
 
-const loadedTasks = loadTasks();
-let tasks = loadedTasks.tasks;
-let storageReady = loadedTasks.error === null;
+let tasks = [];
+let apiReady = false;
+let apiBusy = false;
 let editingTaskId = null;
 let confirmingTaskId = null;
 
-if (loadedTasks.error) {
-  formMessage.textContent = loadedTasks.error;
-  formMessage.dataset.error = "true";
-  titleInput.disabled = true;
-  descriptionInput.disabled = true;
-  priorityInput.disabled = true;
-  dueDateInput.disabled = true;
-  taskForm.querySelector('button[type="submit"]').disabled = true;
-  searchInput.disabled = true;
-  statusFilter.disabled = true;
-  priorityFilter.disabled = true;
+renderTasks();
+
+async function loadTasks() {
+  try {
+    tasks = await apiRequest("/tasks");
+    apiReady = true;
+    showMessage("", false);
+  } catch (error) {
+    showMessage(error.message);
+  }
+  renderTasks();
 }
 
-renderTasks();
+showMessage("API 서버에 연결 중입니다.", false);
+loadTasks();
 
 function getVisibleTasks() {
   const query = searchInput.value.trim().toLocaleLowerCase();
@@ -176,6 +118,19 @@ function appendSelectOptions(select, options, selectedValue) {
 }
 
 function renderTasks() {
+  for (const control of [
+    titleInput,
+    descriptionInput,
+    priorityInput,
+    dueDateInput,
+    taskForm.querySelector('button[type="submit"]'),
+    searchInput,
+    statusFilter,
+    priorityFilter,
+  ]) {
+    control.disabled = !apiReady || apiBusy;
+  }
+
   taskList.replaceChildren();
   const visibleTasks = getVisibleTasks();
   taskCount.textContent =
@@ -187,8 +142,10 @@ function renderTasks() {
     const emptyState = document.createElement("li");
     emptyState.className = "empty-state";
     emptyState.textContent =
-      tasks.length === 0
-        ? "아직 등록된 할 일이 없습니다."
+      !apiReady
+        ? "API에서 목록을 불러오지 못했습니다."
+        : tasks.length === 0
+          ? "아직 등록된 할 일이 없습니다."
         : "조건에 맞는 할 일이 없습니다.";
     taskList.append(emptyState);
     return;
@@ -311,7 +268,7 @@ function renderTasks() {
     status.className = "task-status";
     status.dataset.taskId = task.id;
     status.setAttribute("aria-label", `상태: ${task.title}`);
-    status.disabled = !storageReady;
+    status.disabled = !apiReady || apiBusy;
     appendSelectOptions(
       status,
       [
@@ -335,7 +292,7 @@ function renderTasks() {
         const button = document.createElement("button");
         button.type = "button";
         button.className = `task-action ${className}`;
-        button.disabled = !storageReady;
+        button.disabled = !apiReady || apiBusy;
         button.dataset.action = action;
         button.dataset.taskId = task.id;
         button.textContent = label;
@@ -349,7 +306,7 @@ function renderTasks() {
         const button = document.createElement("button");
         button.type = "button";
         button.className = `task-action task-action-${action}`;
-        button.disabled = !storageReady;
+        button.disabled = !apiReady || apiBusy;
         button.dataset.action = action;
         button.dataset.taskId = task.id;
         button.setAttribute("aria-label", `${label}: ${task.title}`);
@@ -368,9 +325,10 @@ for (const filter of [searchInput, statusFilter, priorityFilter]) {
   filter.addEventListener("change", renderTasks);
 }
 
-taskList.addEventListener("change", (event) => {
+taskList.addEventListener("change", async (event) => {
   if (
-    !storageReady ||
+    !apiReady ||
+    apiBusy ||
     !(event.target instanceof HTMLSelectElement) ||
     !event.target.classList.contains("task-status")
   ) {
@@ -380,20 +338,26 @@ taskList.addEventListener("change", (event) => {
   const { taskId } = event.target.dataset;
   const status = event.target.value;
   if (taskId && taskStatuses.includes(status)) {
-    const updatedTasks = tasks.map((task) =>
-      task.id === taskId ? { ...task, status } : task,
-    );
-    if (persistTasks(updatedTasks)) {
-      tasks = updatedTasks;
-      formMessage.textContent = "";
-      delete formMessage.dataset.error;
-    }
+    apiBusy = true;
     renderTasks();
+    try {
+      const updatedTask = await apiRequest(`/tasks/${encodeURIComponent(taskId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      tasks = tasks.map((task) => (task.id === taskId ? updatedTask : task));
+      showMessage("", false);
+    } catch (error) {
+      showMessage(error.message);
+    } finally {
+      apiBusy = false;
+      renderTasks();
+    }
   }
 });
 
-taskList.addEventListener("submit", (event) => {
-  if (!storageReady || !(event.target instanceof HTMLFormElement)) {
+taskList.addEventListener("submit", async (event) => {
+  if (!apiReady || apiBusy || !(event.target instanceof HTMLFormElement)) {
     return;
   }
 
@@ -429,22 +393,31 @@ taskList.addEventListener("submit", (event) => {
     return;
   }
 
-  const updatedTasks = tasks.map((task) =>
-    task.id === taskId
-      ? { ...task, title, description, priority, due_date: dueDate }
-      : task,
-  );
-  if (persistTasks(updatedTasks)) {
-    tasks = updatedTasks;
+  apiBusy = true;
+  renderTasks();
+  try {
+    const updatedTask = await apiRequest(`/tasks/${encodeURIComponent(taskId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        title,
+        description,
+        priority,
+        due_date: dueDate,
+      }),
+    });
+    tasks = tasks.map((task) => (task.id === taskId ? updatedTask : task));
     editingTaskId = null;
-    formMessage.textContent = "";
-    delete formMessage.dataset.error;
+    showMessage("", false);
+  } catch (error) {
+    showMessage(error.message);
+  } finally {
+    apiBusy = false;
     renderTasks();
   }
 });
 
-taskList.addEventListener("click", (event) => {
-  if (!storageReady || !(event.target instanceof HTMLButtonElement)) {
+taskList.addEventListener("click", async (event) => {
+  if (!apiReady || apiBusy || !(event.target instanceof HTMLButtonElement)) {
     return;
   }
 
@@ -483,20 +456,27 @@ taskList.addEventListener("click", (event) => {
   }
 
   if (action === "confirm-delete") {
-    const updatedTasks = tasks.filter((candidate) => candidate.id !== taskId);
-    if (persistTasks(updatedTasks)) {
-      tasks = updatedTasks;
+    apiBusy = true;
+    renderTasks();
+    try {
+      await apiRequest(`/tasks/${encodeURIComponent(taskId)}`, {
+        method: "DELETE",
+      });
+      tasks = tasks.filter((candidate) => candidate.id !== taskId);
       confirmingTaskId = null;
-      formMessage.textContent = "";
-      delete formMessage.dataset.error;
+      showMessage("", false);
+    } catch (error) {
+      showMessage(error.message);
+    } finally {
+      apiBusy = false;
       renderTasks();
     }
   }
 });
 
-taskForm.addEventListener("submit", (event) => {
+taskForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!storageReady) {
+  if (!apiReady || apiBusy) {
     return;
   }
 
@@ -522,27 +502,29 @@ taskForm.addEventListener("submit", (event) => {
     return;
   }
 
-  const updatedTasks = [
-    ...tasks,
-    {
-      id: crypto.randomUUID(),
-      title,
-      description,
-      status: "TODO",
-      priority,
-      due_date: dueDate,
-      created_at: new Date().toISOString(),
-    },
-  ];
-  if (!persistTasks(updatedTasks)) {
-    return;
-  }
-
-  tasks = updatedTasks;
-  taskForm.reset();
-  priorityInput.value = "NORMAL";
-  formMessage.textContent = "";
-  delete formMessage.dataset.error;
+  apiBusy = true;
   renderTasks();
-  titleInput.focus();
+  try {
+    const createdTask = await apiRequest("/tasks", {
+      method: "POST",
+      body: JSON.stringify({
+        title,
+        description,
+        priority,
+        due_date: dueDate,
+      }),
+    });
+    tasks = [...tasks, createdTask];
+    taskForm.reset();
+    priorityInput.value = "NORMAL";
+    showMessage("", false);
+  } catch (error) {
+    showMessage(error.message);
+  } finally {
+    apiBusy = false;
+    renderTasks();
+  }
+  if (!formMessage.dataset.error) {
+    titleInput.focus();
+  }
 });

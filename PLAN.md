@@ -14,27 +14,30 @@
 ## 3장: API
 - [x] T05: API-SPEC.md 작성, FastAPI /api/health 구현.
   확인: `.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8001`로 실행. `curl --fail --include http://127.0.0.1:8001/api/health`에서 200과 `{"status":"ok"}` 확인, `/openapi.json`에 Task Flow health endpoint 확인. 8000 포트는 기존 다른 앱이 사용 중이어서 8001로 검증함. 남은 오류 없음.
-- [ ] T06: 메모리 기반 /api/tasks GET과 POST.
-  확인: /docs에서 등록 후 조회. 입력 위반은 422.
-- [ ] T07: PATCH·DELETE와 필터 구현.
-  확인: 미전달 필드 유지, 없는 ID 404, 삭제 204.
-- [ ] T08: 프런트엔드 저장 처리를 API 호출로 교체.
-  확인: 화면과 curl 목록이 같음. API 중지 시 오류 표시.
+- [x] T06: 메모리 기반 /api/tasks GET과 POST.
+  확인: `.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8002`로 실행. `/docs`에서 GET·POST 확인. POST 등록 결과 201, 제목 trim 및 기본값 확인, GET 목록에서 등록 항목 확인, 공백 제목 요청에서 422 확인. 메모리 저장은 프로세스 재시작 시 초기화됨. 8000·8001 포트는 이미 사용 중이어서 8002로 검증함. 남은 오류 없음.
+- [x] T07: PATCH·DELETE와 필터 구현.
+  확인: `.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8005`로 재검증. PATCH에서 미전달 필드 유지 및 마감일 null 처리, 제목·상태·우선순위 필터의 AND 적용을 확인. 빈 PATCH·잘못된 제목·날짜는 422, 없는 ID의 PATCH·DELETE는 404, 정상 DELETE는 204 확인. OpenAPI에 404 응답 문서화를 추가함. 8000~8004 포트가 사용 중이어서 8005로 검증함. 남은 오류 없음.
+- [x] T08: 프런트엔드 저장 처리를 API 호출로 교체.
+  확인: 프런트엔드에서 작업 등록·수정·상태 변경·삭제 후 API 목록 및 MariaDB 저장 결과가 일치하는지 8080/8001에서 확인. 브라우저 origin localhost:8080과 127.0.0.1:8080만 CORS 허용. 검증용 작업은 삭제함. 남은 오류 없음.
 ## 4장: DB
-- [ ] T09: MariDB 전용 사용자·DB와 .env 준비. 접속 확인.
-- [ ] T10: backend/database.py, models.py, init_db.py 생성.
-  확인: python -m backend.init_db 실행 후 tasks 테이블 확인.
-- [ ] T11: API 메모리 저장을 DB로 교체.
-  확인: 등록한 행을 SQL로 조회. API 재시작 후 데이터 유지.
+- [x] T09: MariaDB 전용 사용자·DB와 .env 준비. 접속 확인.
+  확인: `.env`에서 DB 설정을 읽어 비밀번호를 노출하지 않고 접속 테스트. MariaDB TCP 연결 성공, `SELECT DATABASE(), CURRENT_USER(), 1` 결과 `task_flow`, `task_flow_app@localhost`, `1`. `.env` 권한 600 확인. 남은 오류 없음.
+- [x] T10: backend/database.py, models.py, init_db.py 생성.
+  확인: `.venv/bin/python -m backend.init_db` 실행 후 `task_flow` DB의 `tasks` 테이블과 id, title, description, status, priority, due_date, created_at 컬럼 확인. SQLAlchemy 연결로 `SELECT DATABASE(), CURRENT_USER(), 1`도 확인. Unicode 비밀번호 호환을 위해 MySQL Connector 드라이버 사용. 남은 오류 없음.
+- [x] T11: API 메모리 저장을 DB로 교체.
+  확인: MariaDB에 등록 행과 필터 결과를 확인하고, API 프로세스를 재시작한 뒤에도 조회되는 것을 확인. PATCH 부분 수정과 마감일 null 처리, 공백 제목 422, 없는 ID의 PATCH·DELETE 404, 정상 DELETE 204 확인. 검증용 행은 삭제함. datetime 타입 import 오류를 수정하고 재기동 후 검증 완료. 남은 오류 없음.
 ## 5장: 서버 분리
 - [ ] T12: DB 서버 구성 후 App 서버에서 SELECT 1 확인.
-- [ ] T13: App 서버 코드·가상환경·환경변수·systemd 구성.
-  확인: App에서 /api/health 응답.
+- [x] T13: App 서버 코드·가상환경·환경변수·systemd 구성.
+  확인: 현재 WSL을 임시 App 서버로 설정하고 `deploy/systemd/user/task-flow-api.service`를 user-level systemd에 등록·활성화. 서비스 상태 `active`, `http://127.0.0.1:8003/api/health`에서 200과 `{"status":"ok"}` 확인. 환경변수는 `.env`를 EnvironmentFile로 연결하며 파일 권한 600 유지. 기존 API가 8001을 사용 중이어서 서비스 포트는 8003으로 분리함. 별도 DB 서버는 아직 준비되지 않아 현재 로컬 MariaDB 설정을 임시 사용하며, T12 이후 `.env`의 DB_HOST를 갱신해야 함. 남은 오류 없음.
 - [ ] T14: Web 서버 Nginx와 정적 파일·/api 프록시 구성.
-  확인: Web 주소로 등록, DB 저장, App 재시작 후 유지.
+  진행: `deploy/nginx/nginx.conf`와 same-origin `/api` 프록시 경로를 준비함. Nginx가 설치되어 있지 않고 현재 사용자에게 sudo 권한이 없어 실행 검증은 대기 중. 설치 후 8080의 기존 임시 HTTP 서버를 Nginx로 교체하고 Web 등록·DB 저장·App 재시작 후 유지 확인 필요.
 ## 실행 기준
 T01~T04: python3 -m http.server 5500 --bind 127.0.0.1 --directory frontend
 T05~T11: 가상환경에서 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+T08: App 서버에서 API를 8001로 실행하고 Web 서버에서 프런트엔드를 8080으로 제공.
+T13 임시 WSL App 서비스: `systemctl --user status task-flow-api.service`, `/api/health` 포트 8003.
 실제 존재하는 파일을 확인한 뒤 명령을 실행한다.
 ## 기록
 각 작업에 변경 파일, 실행 명령, 실제 확인 결과, 남은 오류를 기록한다.
