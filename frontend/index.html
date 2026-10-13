@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f6fb">
+    <title>오늘의 할 일</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="page-header">
+        <p class="eyebrow">TASK FLOW</p>
+        <h1>오늘의 할 일</h1>
+        <p class="intro">작은 일부터 하나씩 정리해 보세요.</p>
+      </header>
+
+      <section class="task-card" aria-labelledby="form-heading">
+        <h2 id="form-heading">새 할 일</h2>
+        <form id="task-form" class="task-form">
+          <label for="task-title">제목</label>
+          <div class="form-row">
+            <input
+              id="task-title"
+              name="title"
+              type="text"
+              maxlength="100"
+              placeholder="예: 자료 정리하기"
+              autocomplete="off"
+              aria-describedby="title-hint form-message"
+              required
+            >
+            <button type="submit">추가하기</button>
+          </div>
+          <label for="task-description">설명 <span class="optional-label">선택</span></label>
+          <textarea
+            id="task-description"
+            name="description"
+            maxlength="2000"
+            rows="3"
+            placeholder="할 일에 대한 설명을 적어 주세요."
+          ></textarea>
+          <div class="task-fields">
+            <div class="field-group">
+              <label for="task-priority">우선순위</label>
+              <select id="task-priority" name="priority">
+                <option value="HIGH">높음</option>
+                <option value="NORMAL" selected>보통</option>
+                <option value="LOW">낮음</option>
+              </select>
+            </div>
+            <div class="field-group">
+              <label for="task-due-date">마감일 <span class="optional-label">선택</span></label>
+              <input id="task-due-date" name="due_date" type="date">
+            </div>
+          </div>
+          <div class="form-footer">
+            <span id="title-hint" class="hint">제목 최대 100자 · 설명 최대 2000자</span>
+            <p id="form-message" class="form-message" role="status" aria-live="polite"></p>
+          </div>
+        </form>
+      </section>
+
+      <section class="list-section" aria-labelledby="list-heading">
+        <div class="list-heading-row">
+          <h2 id="list-heading">할 일 목록</h2>
+          <span id="task-count" class="task-count">0개</span>
+        </div>
+        <div class="task-filters" aria-label="할 일 검색 및 필터">
+          <label class="filter-search">
+            <span class="visually-hidden">제목 검색</span>
+            <input id="task-search" type="search" placeholder="제목 검색">
+          </label>
+          <label class="filter-group">
+            <span>상태</span>
+            <select id="status-filter">
+              <option value="">전체</option>
+              <option value="TODO">할 일</option>
+              <option value="DOING">진행 중</option>
+              <option value="DONE">완료</option>
+            </select>
+          </label>
+          <label class="filter-group">
+            <span>우선순위</span>
+            <select id="priority-filter">
+              <option value="">전체</option>
+              <option value="HIGH">높음</option>
+              <option value="NORMAL">보통</option>
+              <option value="LOW">낮음</option>
+            </select>
+          </label>
+        </div>
+        <ul id="task-list" class="task-list" aria-live="polite">
+          <li class="empty-state">아직 등록된 할 일이 없습니다.</li>
+        </ul>
+      </section>
+      <p class="page-note">할 일은 이 브라우저에 저장되며, 같은 브라우저에서 다시 열어 확인할 수 있습니다.</p>
+    </main>
+  </body>
+</html>
