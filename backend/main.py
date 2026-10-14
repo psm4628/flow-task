@@ -3,7 +3,7 @@ from enum import StrEnum
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, HTTPException, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -11,10 +11,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.auth import auth_validation_error_handler
+from backend.auth import auth_validation_error_handler, get_current_user
 from backend.auth import router as auth_router
 from backend.database import engine
 from backend.models import Task as TaskRecord
+from backend.models import User
 
 
 class TaskStatus(StrEnum):
@@ -91,6 +92,8 @@ class TaskResponse(BaseModel):
     due_date: date | None
     created_at: datetime
 
+UNAUTHORIZED = {status.HTTP_401_UNAUTHORIZED: {"description": "Not authenticated"}}
+
 app = FastAPI(title="Task Flow API")
 app.add_middleware(
     CORSMiddleware,
@@ -111,14 +114,15 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/api/tasks", response_model=list[TaskResponse])
+@app.get("/api/tasks", response_model=list[TaskResponse], responses=UNAUTHORIZED)
 def list_tasks(
     q: str | None = None,
     status: TaskStatus | None = None,
     priority: TaskPriority | None = None,
+    user: User = Depends(get_current_user),
 ) -> list[TaskResponse]:
     query = q.strip().casefold() if q is not None else ""
-    statement = select(TaskRecord)
+    statement = select(TaskRecord).where(TaskRecord.user_id == user.id)
     if query:
         statement = statement.where(func.lower(TaskRecord.title).contains(query, autoescape=True))
     if status is not None:
@@ -136,10 +140,14 @@ def list_tasks(
     "/api/tasks",
     response_model=TaskResponse,
     status_code=status.HTTP_201_CREATED,
+    responses=UNAUTHORIZED,
 )
-def create_task(task: TaskCreate) -> TaskResponse:
+def create_task(
+    task: TaskCreate, user: User = Depends(get_current_user)
+) -> TaskResponse:
     new_task = TaskRecord(
         id=uuid4(),
+        user_id=user.id,
         title=task.title,
         description=task.description,
         status=task.status.value,
@@ -156,9 +164,14 @@ def create_task(task: TaskCreate) -> TaskResponse:
 @app.patch(
     "/api/tasks/{task_id}",
     response_model=TaskResponse,
-    responses={status.HTTP_404_NOT_FOUND: {"description": "Task not found"}},
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Task not found"},
+        **UNAUTHORIZED,
+    },
 )
-def update_task(task_id: UUID, update: TaskUpdate) -> TaskResponse:
+def update_task(
+    task_id: UUID, update: TaskUpdate, user: User = Depends(get_current_user)
+) -> TaskResponse:
     changes = update.model_dump(exclude_unset=True)
     if isinstance(changes.get("status"), TaskStatus):
         changes["status"] = changes["status"].value
@@ -166,7 +179,11 @@ def update_task(task_id: UUID, update: TaskUpdate) -> TaskResponse:
         changes["priority"] = changes["priority"].value
 
     with Session(engine) as session:
-        record = session.get(TaskRecord, task_id)
+        record = session.scalar(
+            select(TaskRecord).where(
+                TaskRecord.id == task_id, TaskRecord.user_id == user.id
+            )
+        )
         if record is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -182,11 +199,18 @@ def update_task(task_id: UUID, update: TaskUpdate) -> TaskResponse:
 @app.delete(
     "/api/tasks/{task_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses={status.HTTP_404_NOT_FOUND: {"description": "Task not found"}},
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "Task not found"},
+        **UNAUTHORIZED,
+    },
 )
-def delete_task(task_id: UUID) -> Response:
+def delete_task(task_id: UUID, user: User = Depends(get_current_user)) -> Response:
     with Session(engine) as session:
-        record = session.get(TaskRecord, task_id)
+        record = session.scalar(
+            select(TaskRecord).where(
+                TaskRecord.id == task_id, TaskRecord.user_id == user.id
+            )
+        )
         if record is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
