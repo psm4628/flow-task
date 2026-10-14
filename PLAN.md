@@ -34,6 +34,15 @@
   확인: 현재 WSL을 임시 App 서버로 설정하고 `deploy/systemd/user/task-flow-api.service`를 user-level systemd에 등록·활성화. 서비스 상태 `active`, `http://127.0.0.1:8003/api/health`에서 200과 `{"status":"ok"}` 확인. 환경변수는 `.env`를 EnvironmentFile로 연결하며 파일 권한 600 유지. 기존 API가 8001을 사용 중이어서 서비스 포트는 8003으로 분리함. 별도 DB 서버는 아직 준비되지 않아 현재 로컬 MariaDB 설정을 임시 사용하며, T12 이후 `.env`의 DB_HOST를 갱신해야 함. 남은 오류 없음.
 - [x] T14: Web 서버 Nginx와 정적 파일·/api 프록시 구성.
   확인: 시스템 nginx(root 마스터, www-data 워커)가 8080을 받고 있고 `/etc/nginx/conf.d/flow-task.conf`가 `deploy/nginx/flow-task.conf`와 동일함을 `diff`로 확인(정적 파일 root는 frontend, `/api/` 프록시는 127.0.0.1:8000). `http://127.0.0.1:8080`에서 `/`, `/api/health`, `/api/tasks` 200 확인. 앞서 사용자 권한으로 `deploy/nginx/nginx.conf`를 8080에서 실행해 `/`·`/app.js`·`/styles.css` 200, Nginx 경유 POST 등록 후 MariaDB 행 확인, `task-flow-api.service` 재시작 후 유지, DELETE 204 후 제거를 확인함(검증용 행 삭제). 프런트는 same-origin `/api`를 사용함. 한계: 시스템 nginx 적용 후 정적 파일 403 여부와 Nginx 경유 등록·수정·삭제는 브라우저에서 직접 조작해 확인하지 않았고 curl 위주로 확인함. 사용자 권한 nginx(`deploy/nginx/nginx.conf`)는 종료되어 현재 사용되지 않음. 남은 오류 없음.
+## 6장: 다중 사용자 (회원가입·로그인/로그아웃)
+인증은 서버 세션 방식이다. 로그인 시 무작위 토큰을 HttpOnly·SameSite=Lax 쿠키로 보내고 DB에는 토큰 해시만 저장한다. 비밀번호 해시는 표준 라이브러리 hashlib.scrypt를 사용해 새 패키지를 추가하지 않는다. 기존 tasks 행은 삭제하지 않고 user_id를 비워 둔다.
+- [x] T15: users·sessions 테이블과 tasks.user_id 컬럼 추가(DB 전용, API 동작 변경 없음).
+  확인: `.venv/bin/python -m backend.init_db`를 두 번 실행(재실행해도 오류 없음). `users`(id, username, password_hash, created_at), `sessions`(token_hash, user_id, created_at, expires_at) 생성과 `tasks.user_id`(NULL 허용, 인덱스, users 외래키 ON DELETE CASCADE) 추가를 확인. 기존 tasks 2행은 삭제 없이 보존되고 user_id는 NULL임. 임시 사용자로 중복 사용자명 거절, 존재하지 않는 user_id 거절, 사용자 삭제 시 세션·할 일 연쇄 삭제를 확인한 뒤 검증용 행은 모두 삭제함. `task-flow-api.service` 재시작 후 `/api/tasks` GET 200, POST·DELETE(201→204)가 기존처럼 동작함. 아직 인증은 적용되지 않음. 남은 오류 없음.
+- [ ] T16: POST /api/auth/register 회원가입(사용자명·비밀번호 검증, 중복 거절, 해시 저장).
+- [ ] T17: POST /api/auth/login, POST /api/auth/logout, GET /api/auth/me (세션 쿠키).
+- [ ] T18: /api/tasks 전체를 로그인 필수로 바꾸고 user_id로 소유자 격리(401, 타인 항목 404).
+- [ ] T19: 프런트 로그인·회원가입 화면, 사용자명 표시, 로그아웃 버튼, 401 처리.
+- [ ] T20: API-SPEC.md 갱신, 두 사용자 격리와 Nginx 경유 전체 흐름 검증.
 ## 실행 기준
 T01~T04: python3 -m http.server 5500 --bind 127.0.0.1 --directory frontend
 T05~T11: 가상환경에서 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
