@@ -28,11 +28,12 @@
 - [x] T11: API 메모리 저장을 DB로 교체.
   확인: MariaDB에 등록 행과 필터 결과를 확인하고, API 프로세스를 재시작한 뒤에도 조회되는 것을 확인. PATCH 부분 수정과 마감일 null 처리, 공백 제목 422, 없는 ID의 PATCH·DELETE 404, 정상 DELETE 204 확인. 검증용 행은 삭제함. datetime 타입 import 오류를 수정하고 재기동 후 검증 완료. 남은 오류 없음.
 ## 5장: 서버 분리
-- [ ] T12: DB 서버 구성 후 App 서버에서 SELECT 1 확인.
+- [x] T12: DB 서버 구성 후 App 서버에서 SELECT 1 확인.
+  확인: 현재 WSL의 MariaDB를 DB 서버로 사용. `.env`(DB_HOST=127.0.0.1, 포트 3306)로 App의 SQLAlchemy 엔진에서 TCP 접속해 `SELECT 1, @@hostname, DATABASE(), CURRENT_USER()` 결과 `1`, `DESKTOP-KRHCJE6`, `task_flow`, `task_flow_app@localhost` 확인. `tasks` 테이블 존재와 `/api/tasks` 200 확인. DB와 App이 같은 WSL이라 별도 머신 간 네트워크 접속은 검증하지 않았고 bind-address는 127.0.0.1 그대로임. 남은 오류 없음.
 - [x] T13: App 서버 코드·가상환경·환경변수·systemd 구성.
   확인: 현재 WSL을 임시 App 서버로 설정하고 `deploy/systemd/user/task-flow-api.service`를 user-level systemd에 등록·활성화. 서비스 상태 `active`, `http://127.0.0.1:8003/api/health`에서 200과 `{"status":"ok"}` 확인. 환경변수는 `.env`를 EnvironmentFile로 연결하며 파일 권한 600 유지. 기존 API가 8001을 사용 중이어서 서비스 포트는 8003으로 분리함. 별도 DB 서버는 아직 준비되지 않아 현재 로컬 MariaDB 설정을 임시 사용하며, T12 이후 `.env`의 DB_HOST를 갱신해야 함. 남은 오류 없음.
-- [ ] T14: Web 서버 Nginx와 정적 파일·/api 프록시 구성.
-  진행: `deploy/nginx/nginx.conf`와 same-origin `/api` 프록시 경로를 준비함. Nginx가 설치되어 있지 않고 현재 사용자에게 sudo 권한이 없어 실행 검증은 대기 중. 설치 후 8080의 기존 임시 HTTP 서버를 Nginx로 교체하고 Web 등록·DB 저장·App 재시작 후 유지 확인 필요.
+- [x] T14: Web 서버 Nginx와 정적 파일·/api 프록시 구성.
+  확인: 시스템 nginx(root 마스터, www-data 워커)가 8080을 받고 있고 `/etc/nginx/conf.d/flow-task.conf`가 `deploy/nginx/flow-task.conf`와 동일함을 `diff`로 확인(정적 파일 root는 frontend, `/api/` 프록시는 127.0.0.1:8000). `http://127.0.0.1:8080`에서 `/`, `/api/health`, `/api/tasks` 200 확인. 앞서 사용자 권한으로 `deploy/nginx/nginx.conf`를 8080에서 실행해 `/`·`/app.js`·`/styles.css` 200, Nginx 경유 POST 등록 후 MariaDB 행 확인, `task-flow-api.service` 재시작 후 유지, DELETE 204 후 제거를 확인함(검증용 행 삭제). 프런트는 same-origin `/api`를 사용함. 한계: 시스템 nginx 적용 후 정적 파일 403 여부와 Nginx 경유 등록·수정·삭제는 브라우저에서 직접 조작해 확인하지 않았고 curl 위주로 확인함. 사용자 권한 nginx(`deploy/nginx/nginx.conf`)는 종료되어 현재 사용되지 않음. 남은 오류 없음.
 ## 실행 기준
 T01~T04: python3 -m http.server 5500 --bind 127.0.0.1 --directory frontend
 T05~T11: 가상환경에서 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload

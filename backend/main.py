@@ -1,9 +1,11 @@
 from datetime import date, datetime
 from enum import StrEnum
+from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -187,3 +189,8 @@ def delete_task(task_id: UUID) -> Response:
         session.delete(record)
         session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# API 라우트 뒤에 마운트해야 /api 경로가 정적 파일보다 먼저 처리된다.
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
