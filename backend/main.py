@@ -4,12 +4,15 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Response, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.auth import auth_validation_error_handler
+from backend.auth import router as auth_router
 from backend.database import engine
 from backend.models import Task as TaskRecord
 
@@ -98,6 +101,9 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Content-Type"],
 )
+
+app.include_router(auth_router)
+app.add_exception_handler(RequestValidationError, auth_validation_error_handler)
 
 
 @app.get("/api/health")

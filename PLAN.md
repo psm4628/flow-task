@@ -38,7 +38,8 @@
 인증은 서버 세션 방식이다. 로그인 시 무작위 토큰을 HttpOnly·SameSite=Lax 쿠키로 보내고 DB에는 토큰 해시만 저장한다. 비밀번호 해시는 표준 라이브러리 hashlib.scrypt를 사용해 새 패키지를 추가하지 않는다. 기존 tasks 행은 삭제하지 않고 user_id를 비워 둔다.
 - [x] T15: users·sessions 테이블과 tasks.user_id 컬럼 추가(DB 전용, API 동작 변경 없음).
   확인: `.venv/bin/python -m backend.init_db`를 두 번 실행(재실행해도 오류 없음). `users`(id, username, password_hash, created_at), `sessions`(token_hash, user_id, created_at, expires_at) 생성과 `tasks.user_id`(NULL 허용, 인덱스, users 외래키 ON DELETE CASCADE) 추가를 확인. 기존 tasks 2행은 삭제 없이 보존되고 user_id는 NULL임. 임시 사용자로 중복 사용자명 거절, 존재하지 않는 user_id 거절, 사용자 삭제 시 세션·할 일 연쇄 삭제를 확인한 뒤 검증용 행은 모두 삭제함. `task-flow-api.service` 재시작 후 `/api/tasks` GET 200, POST·DELETE(201→204)가 기존처럼 동작함. 아직 인증은 적용되지 않음. 남은 오류 없음.
-- [ ] T16: POST /api/auth/register 회원가입(사용자명·비밀번호 검증, 중복 거절, 해시 저장).
+- [x] T16: POST /api/auth/register 회원가입(사용자명·비밀번호 검증, 중복 거절, 해시 저장).
+  확인: `systemctl --user restart task-flow-api.service` 후 8003에서 확인(backend/auth.py 신규, main.py에 라우터 등록). 정상 가입 201(응답은 id·username·created_at만, 사용자명은 소문자 저장), 대소문자만 다른 중복 409, 2자 사용자명·허용되지 않는 문자·한글·`<script>`·8자 미만 비밀번호·공백뿐인 비밀번호·알 수 없는 필드는 422 확인. DB에 비밀번호 원문 없이 `scrypt$...` 해시만 저장되고 올바른 비밀번호만 검증을 통과함. 인증 422 응답은 입력값을 되돌려 주지 않으며 서비스 로그에 비밀번호가 남지 않음. 처음 구현에서 공백뿐인 비밀번호가 가입되고 `/api/tasks` 422가 500이 되는 오류를 발견해 수정 후 재검증했으며 기존 `/api/tasks` 422 형식과 CRUD는 그대로임. 검증용 사용자는 모두 삭제하고 기존 tasks 2행은 보존됨. 8000번 uvicorn은 재시작하지 않아 이 기능은 8003에서만 확인함. 남은 오류 없음.
 - [ ] T17: POST /api/auth/login, POST /api/auth/logout, GET /api/auth/me (세션 쿠키).
 - [ ] T18: /api/tasks 전체를 로그인 필수로 바꾸고 user_id로 소유자 격리(401, 타인 항목 404).
 - [ ] T19: 프런트 로그인·회원가입 화면, 사용자명 표시, 로그아웃 버튼, 401 처리.
