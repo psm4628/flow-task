@@ -9,6 +9,19 @@ const priorityFilter = document.querySelector("#priority-filter");
 const taskList = document.querySelector("#task-list");
 const taskCount = document.querySelector("#task-count");
 const formMessage = document.querySelector("#form-message");
+const authView = document.querySelector("#auth-view");
+const appView = document.querySelector("#app-view");
+const userBar = document.querySelector("#user-bar");
+const currentUser = document.querySelector("#current-user");
+const logoutButton = document.querySelector("#logout-button");
+const authHeading = document.querySelector("#auth-heading");
+const authForm = document.querySelector("#auth-form");
+const authUsername = document.querySelector("#auth-username");
+const authPassword = document.querySelector("#auth-password");
+const authSubmit = document.querySelector("#auth-submit");
+const authHint = document.querySelector("#auth-hint");
+const authMessage = document.querySelector("#auth-message");
+const authTabs = document.querySelectorAll(".auth-tab");
 const apiBaseUrl = "/api";
 const taskStatuses = ["TODO", "DOING", "DONE"];
 const taskPriorities = ["HIGH", "NORMAL", "LOW"];
@@ -59,7 +72,13 @@ async function apiRequest(path, options = {}) {
     } catch {
       detail = "";
     }
-    throw new Error(`요청에 실패했습니다. (${response.status})${detail}`);
+    const error = new Error(`요청에 실패했습니다. (${response.status})${detail}`);
+    error.status = response.status;
+    // 로그인이 필요한 요청이 401이면 세션이 끝난 것이므로 로그인 화면으로 돌아간다.
+    if (response.status === 401 && !path.startsWith("/auth/")) {
+      showLoggedOut("세션이 만료되었습니다. 다시 로그인해 주세요.");
+    }
+    throw error;
   }
 
   return response.status === 204 ? null : response.json();
@@ -70,8 +89,67 @@ let apiReady = false;
 let apiBusy = false;
 let editingTaskId = null;
 let confirmingTaskId = null;
+let authMode = "login";
+let authBusy = false;
 
-renderTasks();
+function showAuthMessage(message, isError = true) {
+  authMessage.textContent = message;
+  if (isError) {
+    authMessage.dataset.error = "true";
+  } else {
+    delete authMessage.dataset.error;
+  }
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  const isRegister = mode === "register";
+  authHeading.textContent = isRegister ? "회원가입" : "로그인";
+  authSubmit.textContent = isRegister ? "가입하기" : "로그인";
+  authHint.textContent = isRegister
+    ? "사용자명 3~30자(영문·숫자·밑줄), 비밀번호 8~128자"
+    : "로그인 정보를 입력해 주세요.";
+  authPassword.autocomplete = isRegister ? "new-password" : "current-password";
+  for (const tab of authTabs) {
+    tab.setAttribute("aria-pressed", String(tab.dataset.mode === mode));
+  }
+  showAuthMessage("", false);
+}
+
+function showLoggedOut(message = "") {
+  tasks = [];
+  apiReady = false;
+  apiBusy = false;
+  editingTaskId = null;
+  confirmingTaskId = null;
+  taskForm.reset();
+  priorityInput.value = "NORMAL";
+  searchInput.value = "";
+  statusFilter.value = "";
+  priorityFilter.value = "";
+  showMessage("", false);
+  currentUser.textContent = "";
+  userBar.hidden = true;
+  appView.hidden = true;
+  authView.hidden = false;
+  authPassword.value = "";
+  setAuthMode("login");
+  showAuthMessage(message, false);
+  renderTasks();
+}
+
+function showLoggedIn(user) {
+  authForm.reset();
+  showAuthMessage("", false);
+  authView.hidden = true;
+  appView.hidden = false;
+  userBar.hidden = false;
+  currentUser.textContent = user.username;
+  apiReady = false;
+  showMessage("API 서버에 연결 중입니다.", false);
+  renderTasks();
+  loadTasks();
+}
 
 async function loadTasks() {
   try {
@@ -84,8 +162,15 @@ async function loadTasks() {
   renderTasks();
 }
 
-showMessage("API 서버에 연결 중입니다.", false);
-loadTasks();
+async function initSession() {
+  try {
+    showLoggedIn(await apiRequest("/auth/me"));
+  } catch (error) {
+    showLoggedOut(error.status === 401 ? "" : error.message);
+  }
+}
+
+initSession();
 
 function getVisibleTasks() {
   const query = searchInput.value.trim().toLocaleLowerCase();
@@ -526,5 +611,97 @@ taskForm.addEventListener("submit", async (event) => {
   }
   if (!formMessage.dataset.error) {
     titleInput.focus();
+  }
+});
+
+for (const tab of authTabs) {
+  tab.addEventListener("click", () => {
+    if (!authBusy) {
+      setAuthMode(tab.dataset.mode);
+    }
+  });
+}
+
+function authErrorMessage(error) {
+  if (error.status === 401) {
+    return "사용자명 또는 비밀번호가 올바르지 않습니다.";
+  }
+  if (error.status === 409) {
+    return "이미 사용 중인 사용자명입니다.";
+  }
+  if (error.status === 422) {
+    return "입력한 사용자명이나 비밀번호 형식을 확인해 주세요.";
+  }
+  return error.message;
+}
+
+authForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (authBusy) {
+    return;
+  }
+
+  const username = authUsername.value.trim();
+  const password = authPassword.value;
+  const isRegister = authMode === "register";
+  if (isRegister && !/^[A-Za-z0-9_]{3,30}$/.test(username)) {
+    showAuthMessage("사용자명은 영문·숫자·밑줄 3~30자로 입력해 주세요.");
+    authUsername.focus();
+    return;
+  }
+  if (!isRegister && (username.length === 0 || username.length > 30)) {
+    showAuthMessage("사용자명을 입력해 주세요.");
+    authUsername.focus();
+    return;
+  }
+  if (isRegister && (password.length < 8 || password.length > 128 || password.trim() === "")) {
+    showAuthMessage("비밀번호는 공백만이 아닌 8~128자로 입력해 주세요.");
+    authPassword.focus();
+    return;
+  }
+  if (!isRegister && (password.length === 0 || password.length > 128)) {
+    showAuthMessage("비밀번호를 입력해 주세요.");
+    authPassword.focus();
+    return;
+  }
+
+  authBusy = true;
+  authSubmit.disabled = true;
+  showAuthMessage("", false);
+  const credentials = JSON.stringify({ username, password });
+  let registered = false;
+  try {
+    if (isRegister) {
+      await apiRequest("/auth/register", { method: "POST", body: credentials });
+      registered = true;
+    }
+    const user = await apiRequest("/auth/login", { method: "POST", body: credentials });
+    authBusy = false;
+    authSubmit.disabled = false;
+    showLoggedIn(user);
+    titleInput.focus();
+    return;
+  } catch (error) {
+    if (registered) {
+      setAuthMode("login");
+      showAuthMessage("가입은 완료되었습니다. 로그인해 주세요.", false);
+    } else {
+      showAuthMessage(authErrorMessage(error));
+    }
+    authPassword.value = "";
+  }
+  authBusy = false;
+  authSubmit.disabled = false;
+});
+
+logoutButton.addEventListener("click", async () => {
+  logoutButton.disabled = true;
+  try {
+    await apiRequest("/auth/logout", { method: "POST" });
+    showLoggedOut("로그아웃했습니다.");
+  } catch (error) {
+    showMessage(error.message);
+  } finally {
+    logoutButton.disabled = false;
   }
 });

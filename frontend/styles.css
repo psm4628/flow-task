@@ -47,6 +47,47 @@ textarea {
   margin-bottom: 36px;
 }
 
+[hidden] {
+  display: none !important;
+}
+
+.user-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  color: #555b72;
+  font-size: 13px;
+}
+
+.user-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.auth-tab {
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: #555b72;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-tab[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #f1efff;
+}
+
 .eyebrow {
   margin: 0 0 12px;
   color: var(--accent);
